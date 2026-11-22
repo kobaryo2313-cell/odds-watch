@@ -1,0 +1,46 @@
+name: odds-watch
+on:
+  schedule:
+    - cron: '30 23 * * 5,6'
+    - cron: '30 3 * * 6,0'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'check=接続の確認 / am=午前の部 / pm=午後の部 / all=全部'
+        default: 'check'
+      races:
+        description: 'レースを絞る(例: 京都6,京都11。空なら全部)'
+        default: ''
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      STARS: ${{ vars.STARS }}
+      RACES: ${{ github.event.inputs.races || vars.RACES }}
+      PYTHONUNBUFFERED: '1'
+      KEIBA_HOME: ${{ github.workspace }}/out
+    steps:
+      - uses: actions/checkout@v4
+      - name: 見張る
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          if [ -z "$MODE" ]; then
+            if [ "$(TZ=Asia/Tokyo date +%H)" -lt 12 ]; then MODE=am; else MODE=pm; fi
+          fi
+          ARGS=""
+          [ -n "$RACES" ] && ARGS="--races $RACES"
+          case "$MODE" in
+            check) python3 odds_watch.py --check ;;
+            am)    python3 odds_watch.py --until 13:30 $ARGS ;;
+            pm)    python3 odds_watch.py --after 13:30 $ARGS ;;
+            all)   python3 odds_watch.py $ARGS ;;
+          esac
+      - name: 取ったオッズを保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: odds-${{ github.run_id }}
+          path: out/直前オッズ
+          if-no-files-found: ignore
